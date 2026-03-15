@@ -111,7 +111,7 @@ let
         };
       };
 
-      rovodev = import ./rovodev-options.nix { inherit lib; };
+      rovodev = (import ./rovodev-options.nix { inherit lib; }).options;
     };
   };
 in {
