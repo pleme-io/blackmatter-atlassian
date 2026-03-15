@@ -124,6 +124,30 @@ let
           example = "~/.config/atlassian/akeyless/rovodev-token";
           description = "Path to file containing the Rovo Dev scoped API token. Injected into macOS Keychain at activation.";
         };
+
+        model = mkOption {
+          type = types.str;
+          default = "claude-opus-4-6";
+          description = "Model ID for Rovo Dev agent.";
+        };
+
+        yolo = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Auto-approve all file and bash operations (no confirmation prompts).";
+        };
+
+        theme = mkOption {
+          type = types.str;
+          default = "dark";
+          description = "Console theme (dark, light, auto, or any Pygments theme name).";
+        };
+
+        maxOutputWidth = mkOption {
+          type = types.either types.int (types.enum [ "fill" ]);
+          default = "fill";
+          description = "Max console output width in characters, or 'fill' for terminal width.";
+        };
       };
     };
   };
@@ -208,6 +232,79 @@ in {
         "acli/confluence_config.yaml".text = mkConfluenceConfig cfg.sites;
       }
     );
+
+    # Deploy ~/.rovodev/config.yml for the default site's rovodev config
+    home.file = mkMerge [
+      (let
+        ds = if cfg.defaultSite != null then cfg.sites.${cfg.defaultSite} else null;
+      in
+        optionalAttrs (ds != null && ds.rovodev.enable) {
+          ".rovodev/config.yml".text = ''
+            version: 1
+
+            agent:
+              modelId: ${ds.rovodev.model}
+              streaming: true
+              temperature: 0.3
+              enableDeepPlanTool: true
+              experimental:
+                enableShadowMode: false
+
+            atlassianConnections:
+              jiraProjects: []
+              enabled: true
+
+            console:
+              outputFormat: markdown
+              showToolResults: true
+              editingMode: EMACS
+              theme: ${ds.rovodev.theme}
+              maxOutputWidth: ${toString ds.rovodev.maxOutputWidth}
+              enableStartupAnimations: false
+              copyOnSelect: true
+
+            mcp:
+              mcpConfigPath: ~/.rovodev/mcp.json
+
+            toolPermissions:
+              default: ${if ds.rovodev.yolo then "allow" else "ask"}
+              tools:
+                open_files: allow
+                expand_code_chunks: allow
+                expand_folder: allow
+                grep: allow
+                create_confluence_page: allow
+                update_confluence_page: allow
+              bash:
+                default: ${if ds.rovodev.yolo then "allow" else "ask"}
+                commands:
+                - command: "ls(\\s.*)?"
+                  permission: allow
+                - command: "cat(\\s.*)?"
+                  permission: allow
+                - command: "echo(\\s.*)?"
+                  permission: allow
+                - command: pwd
+                  permission: allow
+                - command: "git(\\s.*)?"
+                  permission: allow
+                - command: "cargo(\\s.*)?"
+                  permission: allow
+                - command: "nix(\\s.*)?"
+                  permission: allow
+                runInSandbox: false
+
+            atlassianBillingSite:
+              siteUrl: ${ds.siteUrl}
+
+            smartTasks:
+              enabled: true
+              sources:
+              - filesystem
+          '';
+        }
+      )
+    ];
 
     # Inject tokens into macOS Keychain on activation (darwin only)
     home.activation.atlassianKeychain = lib.mkIf pkgs.stdenv.isDarwin
