@@ -209,9 +209,10 @@ in {
       }
     );
 
-    # Inject tokens into macOS Keychain on activation
-    home.activation.atlassianKeychain = lib.hm.dag.entryAfter ["writeBoundary" "sopsNix"] ''
-      ${keychainScript}
-    '';
+    # Inject tokens into macOS Keychain on activation (darwin only)
+    home.activation.atlassianKeychain = lib.mkIf pkgs.stdenv.isDarwin
+      (lib.hm.dag.entryAfter ["writeBoundary" "sopsNix"] ''
+        ${keychainScript}
+      '');
   };
 }
