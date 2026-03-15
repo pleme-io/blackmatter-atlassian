@@ -111,44 +111,7 @@ let
         };
       };
 
-      rovodev = {
-        enable = mkOption {
-          type = types.bool;
-          default = false;
-          description = "Enable Rovo Dev AI agent for this site.";
-        };
-
-        tokenFile = mkOption {
-          type = types.nullOr types.str;
-          default = null;
-          example = "~/.config/atlassian/akeyless/rovodev-token";
-          description = "Path to file containing the Rovo Dev scoped API token. Injected into macOS Keychain at activation.";
-        };
-
-        model = mkOption {
-          type = types.str;
-          default = "claude-opus-4-6";
-          description = "Model ID for Rovo Dev agent.";
-        };
-
-        yolo = mkOption {
-          type = types.bool;
-          default = false;
-          description = "Auto-approve all file and bash operations (no confirmation prompts).";
-        };
-
-        theme = mkOption {
-          type = types.str;
-          default = "dark";
-          description = "Console theme (dark, light, auto, or any Pygments theme name).";
-        };
-
-        maxOutputWidth = mkOption {
-          type = types.either types.int (types.enum [ "fill" ]);
-          default = "fill";
-          description = "Max console output width in characters, or 'fill' for terminal width.";
-        };
-      };
+      rovodev = import ./rovodev-options.nix { inherit lib; };
     };
   };
 in {
@@ -233,41 +196,59 @@ in {
       }
     );
 
-    # Deploy ~/.rovodev/config.yml for the default site's rovodev config
+    # Deploy ~/.rovodev/config.yml from typed options
     home.file = mkMerge [
       (let
         ds = if cfg.defaultSite != null then cfg.sites.${cfg.defaultSite} else null;
+        rv = if ds != null then ds.rovodev else null;
+        toolDefault = if rv != null && rv.yolo then "allow" else
+          (if rv != null then rv.toolPermissions.default else "ask");
+        bashDefault = if rv != null && rv.yolo then "allow" else
+          (if rv != null then rv.toolPermissions.bash.default else "ask");
+        bashCmds = if rv != null then rv.toolPermissions.bash.allowedCommands else [];
+        bashCmdYaml = concatStringsSep "\n" (map (cmd: ''
+                - command: "${cmd}(\\s.*)?"
+                  permission: allow'') bashCmds);
       in
-        optionalAttrs (ds != null && ds.rovodev.enable) {
+        optionalAttrs (ds != null && rv != null && rv.enable) {
           ".rovodev/config.yml".text = ''
             version: 1
 
             agent:
-              modelId: ${ds.rovodev.model}
-              streaming: true
-              temperature: 0.3
-              enableDeepPlanTool: true
+              modelId: ${rv.model}
+              ${optionalString (rv.additionalSystemPrompt != null) "additionalSystemPrompt: \"${rv.additionalSystemPrompt}\""}
+              streaming: ${boolToString rv.streaming}
+              temperature: ${toString rv.temperature}
+              enableDeepPlanTool: ${boolToString rv.enableDeepPlanTool}
               experimental:
-                enableShadowMode: false
+                enableShadowMode: ${boolToString rv.enableShadowMode}
+
+            sessions:
+              persistenceDir: ~/.rovodev/sessions
+              enableWorkspaceStateSync: ${boolToString rv.enableWorkspaceStateSync}
 
             atlassianConnections:
               jiraProjects: []
-              enabled: true
+              enabled: ${boolToString rv.atlassianConnections.enable}
 
             console:
-              outputFormat: markdown
-              showToolResults: true
-              editingMode: EMACS
-              theme: ${ds.rovodev.theme}
-              maxOutputWidth: ${toString ds.rovodev.maxOutputWidth}
-              enableStartupAnimations: false
-              copyOnSelect: true
+              outputFormat: ${rv.console.outputFormat}
+              showToolResults: ${boolToString rv.console.showToolResults}
+              editingMode: ${rv.console.editingMode}
+              theme: ${rv.console.theme}
+              maxOutputWidth: ${toString rv.console.maxOutputWidth}
+              enableStartupAnimations: ${boolToString rv.console.enableStartupAnimations}
+              copyOnSelect: ${boolToString rv.console.copyOnSelect}
+              ${optionalString (rv.console.customCommandPrompt != null) "customCommandPrompt: \"${rv.console.customCommandPrompt}\""}
+              terminalTitle:
+                isEnabled: ${boolToString rv.console.terminalTitle.enable}
+                displayValue: "${rv.console.terminalTitle.displayValue}"
 
             mcp:
               mcpConfigPath: ~/.rovodev/mcp.json
 
             toolPermissions:
-              default: ${if ds.rovodev.yolo then "allow" else "ask"}
+              default: ${toolDefault}
               tools:
                 open_files: allow
                 expand_code_chunks: allow
@@ -276,31 +257,19 @@ in {
                 create_confluence_page: allow
                 update_confluence_page: allow
               bash:
-                default: ${if ds.rovodev.yolo then "allow" else "ask"}
+                default: ${bashDefault}
                 commands:
-                - command: "ls(\\s.*)?"
-                  permission: allow
-                - command: "cat(\\s.*)?"
-                  permission: allow
-                - command: "echo(\\s.*)?"
-                  permission: allow
-                - command: pwd
-                  permission: allow
-                - command: "git(\\s.*)?"
-                  permission: allow
-                - command: "cargo(\\s.*)?"
-                  permission: allow
-                - command: "nix(\\s.*)?"
-                  permission: allow
-                runInSandbox: false
+            ${bashCmdYaml}
+                runInSandbox: ${boolToString rv.toolPermissions.bash.runInSandbox}
+                ${optionalString (rv.toolPermissions.bash.env != {}) "env: {}"}
+              allowedExternalPaths: ${builtins.toJSON rv.toolPermissions.allowedExternalPaths}
 
             atlassianBillingSite:
               siteUrl: ${ds.siteUrl}
 
             smartTasks:
-              enabled: true
-              sources:
-              - filesystem
+              enabled: ${boolToString rv.smartTasks.enable}
+              sources: ${builtins.toJSON rv.smartTasks.sources}
           '';
         }
       )
