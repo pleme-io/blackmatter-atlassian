@@ -15,5 +15,6 @@
       name = "blackmatter-atlassian";
       description = "Declarative Atlassian CLI + Rovo Dev provisioning";
       modules.homeManager = ./module;
+      autoEvalChecks = true;
     };
 }
