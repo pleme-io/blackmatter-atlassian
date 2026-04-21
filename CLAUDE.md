@@ -1,52 +1,57 @@
-# blackmatter-atlassian
+# blackmatter-atlassian — Claude Orientation
 
-Declarative Atlassian CLI provisioning via home-manager. Manages `~/.config/acli/`
-config files and injects API tokens into the macOS Keychain so `acli`, `acli jira`,
-`acli confluence`, and `acli rovodev` work without manual `auth login` flows.
+One-sentence purpose: home-manager module that provisions `acli` + Rovo Dev
+configs and macOS Keychain credentials from SOPS-backed token files.
 
-## HM Module Options
+## Classification
 
-```nix
-blackmatter.components.atlassian = {
-  enable = true;
-  defaultSite = "akeyless";    # Which site is default for CLI ops
+- **Archetype:** `blackmatter-component-hm-only` (home-manager module only, no
+  NixOS/Darwin module, no packages, no overlay)
+- **Flake shape:** driven by `substrate/lib/blackmatter-component-flake.nix`
+  (see `flake.nix` — the entire outputs block is one `import` call)
+- **Option namespace:** `blackmatter.components.atlassian`
 
-  sites.akeyless = {
-    siteUrl = "https://akeyless.atlassian.net";
-    email = "user@akeyless.io";
-    accountId = "712020:xxxx-xxxx-xxxx";  # From /rest/api/3/myself
+## Where to look
 
-    jira.enable = true;         # Provision jira CLI profile
-    confluence.enable = true;   # Provision confluence CLI profile
+| Intent | File |
+|--------|------|
+| Option schema & activation logic | `module/default.nix` |
+| Rovo Dev sub-options (typed) | `module/rovodev-options.nix` |
+| Flake surface (modules, checks, devShell) | `flake.nix` |
+| User-facing usage | `README.md` |
+| Typescape registration | `.typescape.yaml` |
 
-    rovodev.enable = true;      # Provision Rovo Dev AI agent
-    rovodev.tokenFile = "~/.config/atlassian/akeyless/rovodev-token";
-  };
+## What NOT to do
 
-  # Multiple sites supported:
-  # sites.pleme = { siteUrl = "https://pleme.atlassian.net"; ... };
-};
-```
+- **Don't inline a custom `forAllSystems` here.** The flake goes through
+  `substrate/lib/blackmatter-component-flake.nix` — if you need a new output
+  shape, extend the helper, don't bypass it.
+- **Don't add a package output** unless the repo genuinely produces a binary.
+  `acli` itself is installed via Homebrew on macOS (see the HM module's
+  `home.packages` conditional).
+- **Don't hardcode site URLs, emails, or account IDs.** All consumer data goes
+  through the `sites.<name>` option — keep the module generic.
+- **Don't commit real API tokens.** Tokens live in SOPS-encrypted files under
+  `~/.config/atlassian/<site>/` and are referenced by path only.
 
-## What gets provisioned
+## Adding a new site type (e.g. Bitbucket)
 
-| File | Content |
-|------|---------|
-| `~/.config/acli/rovodev_config.yaml` | Email, accountId, auth_type |
-| `~/.config/acli/jira_config.yaml` | Jira profiles per site |
-| `~/.config/acli/confluence_config.yaml` | Confluence profiles per site |
-| `~/.config/acli/config.yaml` | Default site URL |
-| `~/.config/acli/global_*.yaml` | Global acli settings |
-| macOS Keychain `acli` entry | Rovo Dev API token (injected on activation) |
+1. Extend the `sites.<name>` submodule options in `module/default.nix`.
+2. Write a new `mk<Service>Config` function mirroring `mkJiraConfig` /
+   `mkConfluenceConfig`.
+3. Add the generated file to the `home.file` mapping gated on
+   `sites.<name>.<service>.enable`.
+4. `nix flake check` — the `eval-hm-module` check should still pass.
 
-## Getting the accountId
+## Testing
+
+The flake exposes `checks.<system>.eval-hm-module`: a pure-evaluation smoke
+test that imports the module with `enable = false` and walks the options
+tree. Run with:
 
 ```bash
-curl -s -u "email:$(cat ~/.config/atlassian/akeyless/api-token)" \
-  "https://akeyless.atlassian.net/rest/api/3/myself" | jq .accountId
+nix build .#checks.aarch64-darwin.eval-hm-module
 ```
 
-## Multi-site support
-
-Add more entries under `sites` for additional Atlassian instances.
-Each gets its own Jira/Confluence profile and optional Rovo Dev token.
+Add targeted tests by passing `extraChecks = pkgs: { ... }` to
+`mkBlackmatterFlake` in `flake.nix`.

@@ -1,0 +1,64 @@
+# .typescape.yaml — declares this repo's position in the pleme-io typescape.
+# Consumed by arch-synthesizer / repo-forge for fleet-wide queries, BLAKE3
+# Merkle attestation, and classification against the archetype catalog.
+
+schema_version: 1
+manifest:
+  name: blackmatter-atlassian
+  kind: BlackmatterComponent
+  archetype: blackmatter-component-hm-only
+  description: Declarative Atlassian CLI + Rovo Dev provisioning via home-manager.
+
+dimensions:
+  # 1. Vocabulary — domain-specific terms this repo introduces or operates on.
+  vocabulary:
+    - atlassian
+    - acli
+    - jira
+    - confluence
+    - rovodev
+
+  # 2. Domains — AST domains the repo renders into.
+  domains:
+    - Nix     # flake, modules
+    - YAML    # generated acli configs
+    - Shell   # activation scripts
+
+  # 3. Stack — infrastructure layers touched.
+  stack:
+    - HomeManager
+
+  # 4. Modules — typed module surfaces this repo exposes.
+  modules:
+    home_manager: module/
+
+  # 5. Render — artifacts the module produces on consumer systems.
+  render:
+    produces:
+      - "~/.config/acli/rovodev_config.yaml"
+      - "~/.config/acli/jira_config.yaml"
+      - "~/.config/acli/confluence_config.yaml"
+      - "~/.config/acli/config.yaml"
+      - "~/.config/acli/global_*.yaml"
+      - "macOS Keychain:acli"
+
+  # 6. Compliance — controls satisfied by this repo. Atlassian tokens flow
+  # through SOPS → Keychain, so the module participates in secret-at-rest
+  # and secret-at-transit controls without implementing them itself.
+  compliance:
+    satisfies: []
+    participates:
+      - secret-management
+      - credential-injection
+
+  # 7. DAG — flake input dependencies (name-only, pinned in flake.lock).
+  dag:
+    inputs:
+      - nixpkgs
+      - substrate
+
+  # 8. Attestation — populated by the synthesizer when published.
+  attestation:
+    merkle_root: null
+    signed_by: null
+    producer: blackmatter-component-flake.nix
